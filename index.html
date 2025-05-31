@@ -1,0 +1,793 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Straw-Freelament PID Dashboard</title>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <style>
+    :root {
+      --primary:    #74b9ff;
+      --bg:         #0d1117;
+      --hover:      #1b2735;
+      --text:       #e5e5e5;
+      --text-muted: #a0a0a0;
+      --shadow:     rgba(255,255,255,0.05);
+      --warning:    #e53e3e;
+      --track:      #1b2735;
+      --thumb:      #74b9ff;
+      --highlight:  rgba(255,255,255,0.1);
+    }
+    * { margin:0; padding:0; box-sizing:border-box }
+    html, body {
+      height:100%;
+      font-family:'Poppins',Arial,sans-serif;
+      background: linear-gradient(135deg,#0d1117 0%,#1b2735 100%);
+      color: var(--text);
+      overflow-x:hidden;
+      scroll-behavior:smooth;
+    }
+    .navbar {
+      position: relative;
+      background: rgba(0,0,0,0.6);
+      height:80px; padding:0 30px;
+      display:flex; align-items:center;
+      border-bottom:1px solid var(--shadow);
+      box-shadow:0 4px 6px rgba(0,0,0,0.3);
+      z-index:300;
+    }
+    .navbar img { width:60px; height:50px; margin-right:15px; transition:filter .3s }
+    .navbar-title {
+      font-size:18px; font-weight:500;
+      letter-spacing:.5px; color:var(--primary);
+    }
+    #logoStatus.online { filter:drop-shadow(0 0 10px #28a745) }
+    #logoStatus.offline{ filter:drop-shadow(0 0 10px #dc3545) }
+    .settings-icon {
+      margin-left:auto; width:30px; height:30px;
+      cursor:pointer; filter:drop-shadow(0 0 3px var(--primary));
+      transition:transform .2s;
+    }
+    .settings-icon:hover { transform:scale(1.1) }
+
+
+    .side-nav {
+      position:fixed; top:80px; left:100%;
+      width:100%; height:calc(100vh - 80px);
+      background:#fff; box-shadow:-2px 0 8px rgba(0,0,0,0.2);
+      transition:left .3s; z-index:250; padding:20px;
+    }
+    .side-nav.open { left:0 }
+    .close-btn {
+      position:absolute; top:10px; left:10px;
+      background:none; border:none; font-size:1.5rem; cursor:pointer;
+    }
+
+    .side-nav-buttons {
+  max-width: 360px;
+  margin: 40px auto;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.side-nav-buttons button,
+#loginForm button {
+  width: 100%;
+  padding: 8px 12px;
+  background: var(--primary);
+  color: #fff;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+}
+#logoutBtn {
+  background: var(--warning);
+}
+    
+    #loginForm {
+      max-width:360px; margin:40px auto;
+    }
+    #loginForm label {
+      display:block; margin-bottom:12px; font-size:1rem; color:#333;
+    }
+    #loginForm input {
+      width:100%; padding:8px; margin-top:4px;
+      font-size:1rem; border:1px solid #ccc; border-radius:4px;
+    }
+    #loginForm button {
+      margin-top:12px; padding:8px 12px;
+      background:var(--primary); color:#fff;
+      border:none; border-radius:4px; cursor:pointer;
+      width:100%;
+    }
+
+    #adminContent { display:none; }
+
+    /* Current PID & Motor panel */
+    .current-panel {
+      background: var(--bg);
+      padding: 16px;
+      border-radius: 8px;
+      box-shadow: 0 4px 12px var(--shadow);
+      margin: 0 auto 24px;
+      max-width: 400px;
+      text-align: center;
+      color: #e5e5e5;
+    }
+    .current-panel h4 {
+      margin-bottom: 12px;
+      font-size: 1rem;
+      font-weight: 600;
+      color: var(--primary);
+      text-align: center;
+    }
+    .current-values {
+      display: grid;
+      grid-template-columns: repeat(3,1fr);
+      gap: 12px;
+    }
+    .current-card {
+      background: var(--hover);
+      border-radius: 6px;
+      padding: 12px;
+      text-align: center;
+    }
+    /* RPM spans full row but within same width constraint */
+    .current-card.rpm {
+      grid-column: 1 / -1;
+    }
+    .current-card .label {
+      font-size: 0.85rem;
+      color: var(--text-muted);
+      margin-bottom: 4px;
+    }
+    .current-card .value {
+      font-size: 1.3rem;
+      font-weight: bold;
+      color: var(--primary);
+    }
+
+    .modal {
+      display:none; position:fixed; top:0; left:0;
+      width:100%; height:100%; background:rgba(0,0,0,0.5);
+      align-items:center; justify-content:center; z-index:400;
+    }
+    .modal.open { display:flex }
+    .modal-content-warning {
+      background:#fff; padding:24px; border-radius:12px;
+      text-align:center; box-shadow:0 8px 24px var(--shadow);
+      max-width:300px; width:80%;
+    }
+    #confirmModal .modal-content-warning p {
+    color: #000;
+    }
+    .warning-icon {
+      font-size:3rem; color:var(--warning);
+      animation:warning-pulse 1s infinite alternate;
+      margin-bottom:12px;
+    }
+    @keyframes warning-pulse { from{transform:scale(1)} to{transform:scale(1.2)} }
+    .warning-title { font-size:1.5rem; color:var(--warning); margin:0 }
+    .modal-content-warning p { margin:16px 0; font-size:1rem }
+    .modal-content-warning button {
+      margin:0 8px; padding:8px 16px; border:none; border-radius:4px;
+      font-size:1rem; cursor:pointer;
+    }
+    .modal-content-warning .confirm { background:var(--primary); color:#fff }
+    .modal-content-warning .cancel  { background:#f1f3f4; color:var(--text) }
+
+    .tuning-panel {
+      background:var(--bg); padding:24px; border-radius:12px;
+      box-shadow:0 8px 24px var(--shadow); max-width:400px;
+      margin:0 auto; text-align:center; color:#e5e5e5;
+    }
+    .tuning-panel h3 {
+      font-size:1.25rem; color:var(--primary); margin-bottom:16px;
+    }
+    .tuning-grid {
+      display:grid; grid-template-columns:repeat(3,1fr);
+      gap:16px; margin-bottom:24px;
+    }
+    .tuning-item label {
+      display:block; font-weight:600; margin-bottom:6px;
+    }
+    .tuning-item input {
+      width:100%; padding:10px; font-size:1rem;
+      border:2px solid var(--hover); border-radius:8px;
+      transition:border-color .2s, box-shadow .2s;
+    }
+    .tuning-item input:focus {
+      outline:none; border-color:var(--primary);
+      box-shadow:0 0 0 3px rgba(116,185,255,0.2);
+    }
+.tuning-panel .button-row {
+  display: flex;
+  gap: 8px;
+  width: 100%;
+  margin-bottom: 12px;
+}
+/* match SaveSettings look for both buttons */
+.tuning-panel .button-row button {
+  flex: 1;
+  padding: 12px;
+  background: var(--primary);
+  color: #fff;
+  font-size: 1rem;
+  font-weight: 600;
+  border: none;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: filter .2s;
+}
+.tuning-panel .button-row button:hover {
+  filter: brightness(0.9);
+}
+
+/* panel-logout stays auto-width, centered */
+#panelLogout {
+  display: block;
+  margin: 0 auto;
+  padding: 8px 16px;
+  background: #dc3545;
+  color: #fff;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  margin-top: 12px;
+}
+
+    .content {
+      display:flex; align-items:center;
+      max-width:1600px; margin:20px auto; gap:20px;
+    }
+    .camera-box {
+      flex:2; aspect-ratio:3/2; border-radius:8px; overflow:hidden;
+      box-shadow:0 8px 24px var(--shadow); position:relative;
+      transition:transform .3s;
+    }
+    .camera-box:hover { transform:translateY(-4px) }
+    .live-indicator {
+      position:absolute; top:12px; right:12px;
+      background:rgba(234,67,53,0.9); color:#fff;
+      padding:.4rem .8rem; border-radius:12px;
+      font-size:.85rem; font-weight:600; animation:pulse 1.2s infinite;
+    }
+    .fullscreen-btn {
+      position:absolute; bottom:12px; right:12px;
+      background:rgba(0,0,0,0.5); color:#fff; border:none;
+      padding:8px; border-radius:4px; cursor:pointer; font-size:16px;
+      transition:background .2s;
+    }
+    .fullscreen-btn:hover { background:rgba(0,0,0,0.7) }
+
+    .control-box {
+      flex:1.2; min-width:360px; background:var(--bg);
+      padding:20px; border-radius:8px; box-shadow:0 4px 12px var(--shadow);
+      display:flex; flex-direction:column; gap:1rem; color:#e5e5e5;
+      text-align:center;
+    }
+    .display-box {
+      background:var(--hover); padding:12px 16px; border-radius:6px;
+      font-size:1rem; text-align:center; position:relative;
+    }
+    .chart-btn {
+      position:absolute; top:8px; right:8px; background:none;
+      border:none; cursor:pointer; font-size:1.2rem; transition:color .2s;
+    }
+    .chart-btn:hover { color:var(--primary) }
+    .setpoint-input {
+      display:flex; align-items:center; gap:1rem;
+    }
+    .setpoint-input input {
+      width:80px; padding:6px; font-size:1rem;
+      border:1px solid #ccc; border-radius:4px;
+    }
+    .setpoint-input button {
+      background:var(--primary); color:#fff;
+      border:none; padding:6px 12px; border-radius:4px;
+      cursor:pointer;
+    }
+    .presets-container {
+      display:flex; align-items:center; gap:1rem;
+      background:var(--bg); padding:16px 24px;
+      border-radius:8px; box-shadow:0 2px 6px var(--shadow);
+    }
+    .presets-label { font-weight:600 }
+    .dropdown { position:relative }
+    .dropbtn {
+      background:var(--hover); border:none; padding:10px 16px;
+      border-radius:6px; cursor:pointer; font-size:.95rem;
+      display:flex; align-items:center; gap:.3rem; transition:background .2s;
+      min-width:160px;
+    }
+    .dropbtn:hover { background:var(--primary); color:#fff }
+    .dropdown-menu {
+      display:none; position:absolute; top:100%; left:0;
+      margin-top:6px; background:var(--bg);
+      box-shadow:0 4px 12px var(--shadow); border-radius:6px;
+      overflow:hidden; min-width:160px; z-index:100;
+    }
+    .presets-container:hover .dropdown-menu { display:block }
+    .dropdown-menu li {
+      list-style:none; padding:12px 16px; cursor:pointer;
+      transition:background .2s; color:var(--text);
+    }
+    .dropdown-menu li:hover { background:var(--hover) }
+    .dropdown-menu li.recommended {
+      color:var(--primary); font-weight:bold;
+    }
+    .preview-temp {
+      margin-left:auto; font-weight:600; color:var(--primary);
+      min-width:60px; text-align:right;
+    }
+
+    .chart-modal {
+      position:fixed; top:0; left:0; width:100%; height:100%;
+      background:rgba(0,0,0,0.5); display:flex;
+      align-items:center; justify-content:center; z-index:500;
+    }
+    .chart-container {
+      background:#fff; padding:24px; border-radius:12px;
+      box-shadow:0 8px 24px var(--shadow);
+      max-width:600px; width:90%; position:relative;
+    }
+    .chart-close {
+      position:absolute; top:12px; right:12px;
+      background:none; border:none; font-size:1.5rem; cursor:pointer;
+    }
+    @media (max-width:1200px) {
+      .content { flex-direction:column; align-items:center; padding:0 10px }
+      .camera-box { width:100%; aspect-ratio:16/9 }
+      .control-box { width:100%; margin-top:20px }
+    }
+
+    .nav-status-dot {
+  position: absolute;
+  top: 12px;    /* tweak to align vertically */
+  right: 12px;  /* tweak to align horizontally */
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--warning);
+  box-shadow: 0 0 4px var(--shadow);
+  animation: pulse 1.5s infinite ease-in-out;
+  transition: background 0.3s, box-shadow 0.3s;
+}
+.nav-status-dot.online {
+  background: #3cff00;
+  box-shadow:   0 0 4px #3cff00;
+}
+.nav-status-dot.offline {
+  background: var(--warning);
+  box-shadow:   0 0 4px var(--warning);
+}
+
+  </style>
+</head>
+<body>
+  <div class="navbar">
+    <img src="/images/abra.png" id="logoStatus" alt="logo">
+    <div class="navbar-title"><b>Live Video Monitoring and Control for Straw-Freelament Machine</b></div>
+    <img id="settingsBtn" src="/images/settings.png" class="settings-icon" alt="Settings">
+    <span id="navStatusDot" class="nav-status-dot offline"></span>
+  </div>
+
+  <div id="warningModal" class="modal">
+    <div class="modal-content-warning">
+      <div class="warning-icon">⚠️</div>
+      <h3 class="warning-title">WARNING!</h3>
+    </div>
+  </div>
+
+  <div id="confirmModal" class="modal">
+    <div class="modal-content-warning">
+      <h3 class="warning-title">Apply settings?</h3>
+      <p>These changes will be sent to the hardware.</p>
+      <button id="confirmSave" class="confirm">Yes</button>
+      <button id="cancelSave"  class="cancel">No</button>
+    </div>
+  </div>
+
+  <div id="sideNav" class="side-nav">
+    <button class="close-btn" id="closeNav">&times;</button>
+
+    <div id="sideNavButtons" class="side-nav-buttons">
+    <button id="logoutBtn">Logout Dashboard</button>
+    <button id="showLoginBtn">Login Admin Panel</button>
+    </div>
+    
+
+    <form id="loginForm" style="display:none">
+      <label>Username<input type="text" id="adminUser" required></label>
+      <label>Password<input type="password" id="adminPass" required></label>
+      <button type="submit">Login</button>
+    </form>
+    <div id="adminContent" style="display:none">
+      <div class="current-panel">
+        <h4>Current PID Values</h4>
+        <div class="current-values">
+          <div class="current-card">
+            <div class="label">Kp</div>
+            <div class="value" id="currentKp">0</div>
+          </div>
+          <div class="current-card">
+            <div class="label">Ki</div>
+            <div class="value" id="currentKi">0</div>
+          </div>
+          <div class="current-card">
+            <div class="label">Kd</div>
+            <div class="value" id="currentKd">0</div>
+          </div>
+
+        </div>
+      </div>
+
+      <div class="tuning-panel">
+        <h3>PID Tuning </h3>
+        <div class="tuning-grid">
+          <div class="tuning-item"><label for="kpInput">Kp</label><input id="kpInput" type="number" step="0.01"></div>
+          <div class="tuning-item"><label for="kiInput">Ki</label><input id="kiInput" type="number" step="0.01"></div>
+          <div class="tuning-item"><label for="kdInput">Kd</label><input id="kdInput" type="number" step="0.01"></div>
+        </div>
+        <div class="button-row">
+        <button id="saveSettings">Save Settings</button>
+        <button id="resetDefaults">Reset Defaults</button>
+        </div>
+        <button id="panelLogout">Logout</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="content">
+    <div class="camera-box" id="cameraBox">
+      <div class="live-indicator">LIVE</div>
+      <img src="http://172.20.10.4/stream" alt="Live Camera" style="width:100%;height:100%;object-fit:cover;">
+      <button class="fullscreen-btn" onclick="toggleFullScreen()">⛶</button>
+    </div>
+    <div class="control-box">
+      <h2>ESP32 PID Temperature Control</h2>
+      <div class="display-box">
+        Current Temp: <span id="temp">0</span> °C
+        <button id="chartBtn" class="chart-btn">📈</button>
+      </div>
+      <div class="setpoint-input">
+        <div class="display-box">Setpoint: <span id="setp">0</span> °C</div>
+        <input id="newSet" type="number" step="1"><button onclick="setPoint()">Set</button>
+        <div class="display-box">Output: <span id="output">0</span> </div>
+      </div>
+        <div class="setpoint-input">
+    <div class="display-box">
+      RPM: <span id="rpmDisplay">0</span>
+    </div>
+    <input id="newRpm" type="number" min="0" max="80" step="1">
+    <button onclick="setRpm()">Set</button>
+  </div>
+      <div class="presets-container">
+        <span class="presets-label">PRESETS:</span>
+        <div class="dropdown">
+          <button class="dropbtn">Choose Preset ▾</button>
+<ul class="dropdown-menu">
+  <li data-temp="160" data-rpm="20">Low</li>
+  <li class="recommended" data-temp="180" data-rpm="45">Recommended</li>
+  <li data-temp="200" data-rpm="80">High</li>
+</ul>
+        </div>
+        <div class="preview-temp" id="previewTemp"> 0 RPM · 0 °C</div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+  let currentUser = null,
+      currentPass = null;
+
+  const sideNavButtons = document.getElementById('sideNavButtons');
+
+    const settingsBtn  = document.getElementById('settingsBtn'),
+          warningModal = document.getElementById('warningModal'),
+          sideNav      = document.getElementById('sideNav'),
+          closeNav     = document.getElementById('closeNav'),
+          loginForm    = document.getElementById('loginForm'),
+          adminContent = document.getElementById('adminContent'),
+          saveSettings = document.getElementById('saveSettings'),
+          confirmModal = document.getElementById('confirmModal'),
+          confirmSave  = document.getElementById('confirmSave'),
+          cancelSave   = document.getElementById('cancelSave'),
+          resetDefaultsBtn = document.getElementById('resetDefaults'),
+          panelLogoutBtn   = document.getElementById('panelLogout'),
+          logoutDashboardBtn = document.getElementById('logoutBtn');
+
+function resetLogin() {
+  // show the two buttons, hide everything else
+  document.getElementById('sideNavButtons').style.display = 'flex';
+  loginForm.style.display    = 'none';
+  adminContent.style.display = 'none';
+  document.getElementById('adminUser').value = '';
+  document.getElementById('adminPass').value = '';
+}
+
+document.getElementById('logoutBtn').addEventListener('click', () => {
+  window.location.href = 'http://localhost/capstone/authentication.html';
+  reset();
+});
+
+  function reset(){
+    localStorage.removeItem('kp');
+    localStorage.removeItem('ki');
+    localStorage.removeItem('kd');
+  }
+
+settingsBtn.addEventListener('click', () => {
+  if (sideNav.classList.contains('open')) {
+    sideNav.classList.remove('open');
+  } else {
+    sideNav.classList.add('open');
+  }
+});
+
+document.getElementById('showLoginBtn').addEventListener('click', () => {
+  warningModal.classList.add('open');
+  let clicks = 0;
+  const t = setTimeout(() => {
+    warningModal.classList.remove('open');
+    sideNavButtons.style.display = 'none';
+    loginForm.style.display      = 'block';
+  }, 2000);
+
+  // allow user to click the warning to skip the delay
+  warningModal.onclick = () => {
+    if (++clicks >= 1) {
+      clearTimeout(t);
+      warningModal.classList.remove('open');
+      sideNavButtons.style.display = 'none';
+      loginForm.style.display      = 'block';
+    }
+  };
+});
+
+
+    closeNav.addEventListener('click', () => {
+      sideNav.classList.remove('open');
+      
+    });
+
+  loginForm.addEventListener('submit', async e => {
+    e.preventDefault();
+    const user = document.getElementById('adminUser').value;
+    const pass = document.getElementById('adminPass').value;
+    currentUser = user;
+    currentPass = pass;
+
+    try {
+      const res = await fetch(`/tune?user=${encodeURIComponent(user)}&pass=${encodeURIComponent(pass)}`);
+      if (!res.ok) throw new Error();
+      const { kp, ki, kd } = await res.json();
+
+      // Use saved values if they exist
+      const savedKp = localStorage.getItem('kp'),
+            savedKi = localStorage.getItem('ki'),
+            savedKd = localStorage.getItem('kd');
+      const useKp = savedKp !== null ? parseFloat(savedKp) : kp;
+      const useKi = savedKi !== null ? parseFloat(savedKi) : ki;
+      const useKd = savedKd !== null ? parseFloat(savedKd) : kd;
+
+      // Populate cards
+      document.getElementById('currentKp').innerText = useKp.toFixed(2);
+      document.getElementById('currentKi').innerText = useKi.toFixed(2);
+      document.getElementById('currentKd').innerText = useKd.toFixed(2);
+      // Populate inputs
+      document.getElementById('kpInput').value = useKp;
+      document.getElementById('kiInput').value = useKi;
+      document.getElementById('kdInput').value = useKd;
+
+      // Show tuning UI
+      sideNavButtons.style.display = 'none';
+      loginForm.style.display      = 'none';
+      adminContent.style.display   = 'block';
+    } catch {
+      alert('Login failed');
+      resetLogin();
+    }
+  });
+
+
+
+    resetDefaultsBtn.addEventListener('click', () => {
+    localStorage.removeItem('kp');
+    localStorage.removeItem('ki');
+    localStorage.removeItem('kd');
+    if (currentUser && currentPass) {
+      loginForm.dispatchEvent(new Event('submit'));
+    }
+  });
+
+  panelLogoutBtn.addEventListener('click', () => {
+    sideNav.classList.remove('close');
+    resetLogin();
+  });
+
+    saveSettings.addEventListener('click', () => confirmModal.classList.add('open'));
+    cancelSave.addEventListener('click', () => confirmModal.classList.remove('open'));
+    confirmSave.addEventListener('click', async () => {
+    confirmModal.classList.remove('open');
+    const kp = parseFloat(document.getElementById('kpInput').value),
+          ki = parseFloat(document.getElementById('kiInput').value),
+          kd = parseFloat(document.getElementById('kdInput').value);
+
+    await fetch('/tune', {
+      method:'POST',
+      headers:{ 'Content-Type':'application/x-www-form-urlencoded' },
+      body:`kp=${kp}&ki=${ki}&kd=${kd}`
+    });
+
+    // Persist values
+    localStorage.setItem('kp', kp);
+    localStorage.setItem('ki', ki);
+    localStorage.setItem('kd', kd);
+
+    // Immediately update cards
+    document.getElementById('currentKp').innerText = kp.toFixed(2);
+    document.getElementById('currentKi').innerText = ki.toFixed(2);
+    document.getElementById('currentKd').innerText = kd.toFixed(2);
+
+    alert('Settings applied');
+  });
+
+
+
+    async function showChartModal() {
+      warningModal.classList.remove('open');
+      confirmModal.classList.remove('open');
+      sideNav.classList.remove('open');
+      resetLogin();
+      const overlay = document.createElement('div');
+      overlay.className = 'chart-modal';
+      overlay.innerHTML = `
+        <div class="chart-container">
+          <button class="chart-close">×</button>
+          <canvas id="tempChart"></canvas>
+        </div>`;
+      document.body.appendChild(overlay);
+      overlay.querySelector('.chart-close').onclick = () => overlay.remove();
+      overlay.onclick = e => { if (e.target===overlay) overlay.remove(); };
+
+      const ctx = overlay.querySelector('#tempChart').getContext('2d');
+      const chart = new Chart(ctx,{ type:'line',
+        data:{ labels:[], datasets:[
+          { label:'Current Temp', data:[], borderColor:'#1a73e8', tension:0.3 },
+          { label:'Setpoint',      data:[], borderColor:'#e53e3e', tension:0.3 }
+        ]},
+        options:{ responsive:true, scales:{
+          x:{ title:{display:true,text:'Time'} },
+          y:{ title:{display:true,text:'°C'} }
+        }}
+      });
+
+      async function update() {
+        try {
+          const res = await fetch('/data',{cache:'no-store'});
+          if(!res.ok) throw 0;
+          const j = await res.json();
+          const t = new Date().toLocaleTimeString();
+          chart.data.labels.push(t);
+          chart.data.datasets[0].data.push(j.temp);
+          chart.data.datasets[1].data.push(j.set);
+          if(chart.data.labels.length>30){
+            chart.data.labels.shift();
+            chart.data.datasets.forEach(ds=>ds.data.shift());
+          }
+          chart.update();
+        } catch {}
+      }
+      await update();
+      const iv = setInterval(update,1000);
+      overlay.addEventListener('remove',()=>clearInterval(iv));
+    }
+    document.getElementById('chartBtn').addEventListener('click', showChartModal);
+
+function setStatus(on){
+  // logo flash
+  document.getElementById('logoStatus')
+    .classList.toggle('online', on);
+  document.getElementById('logoStatus')
+    .classList.toggle('offline', !on);
+
+  // navbar dot
+  const dot = document.getElementById('navStatusDot');
+  dot.classList.toggle('online', on);
+  dot.classList.toggle('offline', !on);
+}
+
+    async function setRpm(){
+      const v = document.getElementById('newRpm').value;
+      const res = await fetch(`/setMotor?rpm=${encodeURIComponent(v)}`);
+      if(res.ok){
+        const { rpm } = await res.json();
+        document.getElementById('rpmDisplay').innerText = rpm;
+      }
+      fetchData();
+    }
+
+async function fetchData() {
+  try {
+    const r = await fetch('/data', { cache:'no-store' });
+    if (!r.ok) throw 0;
+    const j = await r.json();
+
+    // update the read-outs
+    document.getElementById('temp').innerText   = j.temp.toFixed(1);
+    document.getElementById('setp').innerText   = j.set.toFixed(1);
+    document.getElementById('output').innerText = j.output.toFixed(1);
+
+    setStatus(true);
+
+    // sync the set-point input if not focused
+    const newSetEl = document.getElementById('newSet');
+    if (document.activeElement !== newSetEl) {
+      newSetEl.value = j.set.toFixed(1);
+    }
+
+    // sync the RPM input & slider if not focused
+    const newRpmEl = document.getElementById('newRpm');
+    if (document.activeElement !== newRpmEl) {
+      newRpmEl.value = j.rpm;
+    }
+    document.getElementById('rpmDisplay').innerText = j.rpm; 
+  } catch {
+    setStatus(false);
+  }
+}
+    async function setPoint(){
+      const v=document.getElementById('newSet').value;
+      await fetch('/set',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:'set='+encodeURIComponent(v)});
+      fetchData();
+    }
+
+    document.addEventListener('DOMContentLoaded',()=>{
+    
+      fetchData();
+      setInterval(fetchData,1000);
+      
+document.querySelectorAll('.dropdown-menu li').forEach(item => {
+  // hover preview (unchanged)
+  item.addEventListener('mouseenter', () => {
+    document.getElementById('previewTemp').innerText =
+      `${item.dataset.rpm} RPM · ${item.dataset.temp} °C`;
+  });
+  item.addEventListener('mouseleave', () => {
+    document.getElementById('previewTemp').innerText = '0 RPM · 0 °C';
+  });
+
+  // click → set temp, set rpm, update UI immediately
+  item.addEventListener('click', async () => {
+    const t = item.dataset.temp;
+    const r = item.dataset.rpm;
+
+    // 1) push temp
+    await fetch('/set', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: `set=${encodeURIComponent(t)}`
+    });
+
+    // 2) push rpm & read its JSON
+    const res = await fetch(`/setMotor?rpm=${encodeURIComponent(r)}`);
+          if(res.ok){
+            const { rpm } = await res.json();
+            document.getElementById('rpmDisplay').innerText = rpm;
+            document.getElementById('newRpm').value         = rpm;
+          }
+
+    // 3) finally, refresh the rest of the dashboard
+    fetchData();
+  });
+});
+});
+    function toggleFullScreen(){
+      const cam=document.getElementById('cameraBox');
+      if(!document.fullscreenElement) cam.requestFullscreen().catch(console.error);
+      else document.exitFullscreen();
+    }
+  </script>
+</body>
+</html>
